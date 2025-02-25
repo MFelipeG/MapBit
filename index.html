@@ -8,7 +8,7 @@
     <!-- Bibliotecas -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" defer></script>
     <script src="https://unpkg.com/globe.gl" defer></script>
-    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js" defer></script>
+    <script src="https://unpkg.com/supercluster@7.1.0/dist/index.umd.js" defer></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
 
@@ -120,6 +120,13 @@
         #routeMap {
             width: 100%;
             height: 100%;
+        }
+
+        /* Globo 3D */
+        #globeContainer {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
         }
 
         /* Marcadores no Globo */
@@ -244,18 +251,22 @@
         }
 
         // Módulo de Inicialização do Globo 3D
-        const globe = Globe()
-            .globeImageUrl('//unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
-            .bumpImageUrl('//unpkg.com/three-globe/example/img/earth-topology.png')
-            .pointsData([])
-            .pointAltitude(d => 0.05)
-            .pointColor(() => '#00f3ff')
-            .pointRadius(() => 0.01);
+        let globe;
+        try {
+            globe = Globe()
+                .globeImageUrl('//unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
+                .bumpImageUrl('//unpkg.com/three-globe/example/img/earth-topology.png')
+                .pointsData([])
+                .pointAltitude(d => 0.05)
+                .pointColor(() => '#00f3ff')
+                .pointRadius(() => 0.01);
 
-        let currentData = [];
-        globe(document.getElementById('globeContainer'));
-        globe.controls().autoRotate = true;
-        globe.pointOfView({ altitude: 2 });
+            globe(document.getElementById('globeContainer'));
+            globe.controls().autoRotate = true;
+            globe.pointOfView({ altitude: 2 });
+        } catch (error) {
+            console.error("Erro ao inicializar o globo:", error);
+        }
 
         // Módulo de Clusters
         const superCluster = Supercluster({
