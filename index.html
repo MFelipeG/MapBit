@@ -8,6 +8,7 @@
     <!-- Bibliotecas -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://unpkg.com/globe.gl"></script>
+    <script src="https://unpkg.com/supercluster@7.1.0/dist/index.umd.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
 
@@ -65,6 +66,40 @@
         }
         .filter-btn.active {
             background: #ff0066;
+        }
+
+        /* Marcadores no Globo */
+        .marker {
+            position: relative;
+            cursor: pointer;
+        }
+        .marker-tooltip {
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: #fff;
+            padding: 5px 10px;
+            border-radius: 5px;
+            white-space: nowrap;
+        }
+        .marker-pulse {
+            width: 10px;
+            height: 10px;
+            background: #00f3ff;
+            border-radius: 50%;
+            animation: pulse 1.5s infinite ease-in-out;
+        }
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+                opacity: 1;
+            }
+            100% {
+                transform: scale(1.5);
+                opacity: 0;
+            }
         }
     </style>
 </head>
@@ -125,15 +160,19 @@
             }
         }
 
-        // Função para atualizar os marcadores no globo
+        // Função para atualizar os marcadores no globo usando clusters
+        const superCluster = Supercluster({
+            radius: 60,
+            maxZoom: 16
+        });
+
         function updateGlobeMarkers(data) {
-            globe.pointsData(data.map(loc => ({
-                latitude: loc.lat,
-                longitude: loc.lng,
-                altitude: 0.05,
-                color: loc.type === 'ATM' ? '#ff0066' : '#00f3ff',
-                radius: 0.01
+            superCluster.load(data.map(loc => ({
+                geometry: { coordinates: [loc.lng, loc.lat] },
+                properties: { ...loc }
             })));
+
+            globe.pointsData(superCluster.getClusters([-180, -90, 180, 90], globe.zoomLevel()));
         }
 
         // Função para filtrar marcadores
@@ -146,7 +185,7 @@
         });
 
         function filterMarkers(type) {
-            globe.pointsData(currentData.filter(d => type === 'all' || d.type === type));
+            globe.pointsData(currentData.filter(d => type === 'all' || d.properties.type === type));
         }
 
         // Barra de Pesquisa
@@ -159,7 +198,7 @@
                     currentData = data;
                     updateGlobeMarkers(data); // Atualiza os marcadores no globo
                 } catch (error) {
-                    console.error(error.message);
+                    alert(error.message);
                 }
             } else {
                 globe.pointsData([]); // Limpa os marcadores se a entrada estiver vazia
