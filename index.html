@@ -6,8 +6,9 @@
     <title>CryptoWorld Map 2.0</title>
 
     <!-- Bibliotecas -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://unpkg.com/globe.gl"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" defer></script>
+    <script src="https://unpkg.com/globe.gl" defer></script>
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js" defer></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
 
@@ -87,6 +88,10 @@
             background: rgba(0, 0, 0, 0.8);
             padding: 15px;
             border-radius: 10px;
+            display: none;
+        }
+        .sidebar.open {
+            display: block;
         }
         .location-card {
             margin-bottom: 15px;
@@ -150,6 +155,18 @@
                 opacity: 0;
             }
         }
+
+        /* Responsividade */
+        @media (max-width: 768px) {
+            .sidebar {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                z-index: 1000;
+            }
+        }
     </style>
 </head>
 <body>
@@ -173,7 +190,6 @@
         <div id="routeMap"></div>
     </div>
 
-    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
     <script>
         // Módulo de Autenticação
         const user = {
@@ -185,30 +201,72 @@
             document.getElementById('loginBtn').textContent = user.loggedIn ? 'Sair' : 'Entrar';
         });
 
+        // Botão para alternar o sidebar
+        const toggleSidebarBtn = document.createElement('button');
+        toggleSidebarBtn.textContent = "Locais";
+        toggleSidebarBtn.style.position = "absolute";
+        toggleSidebarBtn.style.top = "20px";
+        toggleSidebarBtn.style.right = "220px";
+        toggleSidebarBtn.style.zIndex = "1000";
+        toggleSidebarBtn.style.backgroundColor = "#00f3ff";
+        toggleSidebarBtn.style.color = "#000";
+        toggleSidebarBtn.style.border = "none";
+        toggleSidebarBtn.style.padding = "8px 15px";
+        toggleSidebarBtn.style.borderRadius = "15px";
+        toggleSidebarBtn.style.cursor = "pointer";
+
+        toggleSidebarBtn.addEventListener('click', () => {
+            document.querySelector('.sidebar').classList.toggle('open');
+        });
+
+        document.body.appendChild(toggleSidebarBtn);
+
         // Módulo de Integração com API Coinmap
         async function fetchCryptoLocations(country) {
-            const response = await fetch(`https://coinmap.org/api/v1/venues/?country=${country}`);
-            const data = await response.json();
-            return data.venues.map(item => ({
-                type: item.category === 'ATM' ? 'ATM' : 'Business',
-                name: item.name,
-                address: item.address,
-                lat: item.lat,
-                lng: item.lon,
-                crypto: item.tags.split(' ')
-            }));
+            try {
+                const response = await fetch(`https://coinmap.org/api/v1/venues/?country=${country}`);
+                if (!response.ok) {
+                    throw new Error("Nenhum local encontrado para este país.");
+                }
+                const data = await response.json();
+                return data.venues.map(item => ({
+                    type: item.category === 'ATM' ? 'ATM' : 'Business',
+                    name: item.name,
+                    address: item.address,
+                    lat: item.lat,
+                    lng: item.lon,
+                    crypto: item.tags.split(' ')
+                }));
+            } catch (error) {
+                alert(error.message);
+                return [];
+            }
         }
 
         // Módulo de Inicialização do Globo 3D
         const globe = Globe()
             .globeImageUrl('//unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
             .bumpImageUrl('//unpkg.com/three-globe/example/img/earth-topology.png')
-            .htmlElement(d => createMarker(d));
+            .pointsData([])
+            .pointAltitude(d => 0.05)
+            .pointColor(() => '#00f3ff')
+            .pointRadius(() => 0.01);
 
         let currentData = [];
         globe(document.getElementById('globeContainer'));
         globe.controls().autoRotate = true;
         globe.pointOfView({ altitude: 2 });
+
+        // Módulo de Clusters
+        const superCluster = Supercluster({
+            radius: 60,
+            maxZoom: 16
+        });
+
+        function updateClusters(data) {
+            superCluster.load(data.map(d => ({ geometry: { coordinates: [d.lng, d.lat] }, properties: d })));
+            globe.pointsData(superCluster.getClusters([-180, -90, 180, 90], globe.zoomLevel()));
+        }
 
         // Módulo de Filtros
         document.querySelectorAll('.filter-btn').forEach(btn => {
@@ -220,7 +278,7 @@
         });
 
         function filterMarkers(type) {
-            globe.htmlElementsData(currentData.filter(d => type === 'all' || d.type === type));
+            globe.pointsData(currentData.filter(d => type === 'all' || d.type === type));
         }
 
         // Módulo de Rotas
@@ -241,57 +299,9 @@
             }).addTo(routeMap);
         }
 
-        // Módulo de Marcadores Dinâmicos
-        function createMarker(d) {
-            const marker = document.createElement('div');
-            marker.className = `marker ${d.type === 'ATM' ? 'atm-marker' : 'business-marker'}`;
-            marker.innerHTML = `
-                <div class="marker-pulse"></div>
-                <div class="marker-tooltip">${d.name}</div>
-            `;
-
-            marker.addEventListener('click', () => {
-                if (navigator.geolocation) {
-                    navigator.geolocation.getCurrentPosition(position => {
-                        showRoute(
-                            { lat: position.coords.latitude, lng: position.coords.longitude },
-                            { lat: d.lat, lng: d.lng }
-                        );
-                    });
-                }
-            });
-            return marker;
-        }
-
-        // Módulo de Barra de Pesquisa
-        document.getElementById('countrySearch').addEventListener('input', async function(e) {
-            const country = e.target.value.trim();
-            if (country.length > 2) {
-                const data = await fetchCryptoLocations(country);
-                currentData = data;
-                globe.htmlElementsData(data);
-                updateSidebar(data);
-            } else {
-                globe.htmlElementsData([]);
-                updateSidebar([]);
-            }
-        });
-
-        function updateSidebar(data) {
-            const html = data.map(loc => `
-                <div class="location-card">
-                    <h3>${loc.name}</h3>
-                    <p>Tipo: ${loc.type}</p>
-                    <p>Endereço: ${loc.address}</p>
-                    <button onclick="showRouteFromCurrent(${loc.lat}, ${loc.lng})">Como chegar</button>
-                </div>
-            `).join('');
-            document.getElementById('locationsList').innerHTML = html;
-        }
-
         // Fechar Modal de Rotas
         document.querySelector('.route-modal').addEventListener('click', e => {
-            if (e.target === document.querySelector('.route-modal')) {
+            if (e.target.classList.contains('route-modal')) {
                 document.querySelector('.route-modal').style.display = 'none';
                 if (routeMap) routeMap.remove();
                 routeMap = null;
@@ -308,6 +318,36 @@
                     );
                 });
             }
+        }
+
+        // Módulo de Barra de Pesquisa
+        let searchTimeout;
+        document.getElementById('countrySearch').addEventListener('input', function(e) {
+            const country = e.target.value.trim();
+            clearTimeout(searchTimeout);
+            if (country.length > 2) {
+                searchTimeout = setTimeout(async () => {
+                    const data = await fetchCryptoLocations(country);
+                    currentData = data;
+                    updateClusters(data);
+                    updateSidebar(data);
+                }, 500); // Debounce de 500ms
+            } else {
+                globe.pointsData([]);
+                updateSidebar([]);
+            }
+        });
+
+        function updateSidebar(data) {
+            const html = data.map(loc => `
+                <div class="location-card">
+                    <h3>${loc.name}</h3>
+                    <p>Tipo: ${loc.type}</p>
+                    <p>Endereço: ${loc.address}</p>
+                    <button onclick="showRouteFromCurrent(${loc.lat}, ${loc.lng})">Como chegar</button>
+                </div>
+            `).join('');
+            document.getElementById('locationsList').innerHTML = html;
         }
     </script>
 </body>
