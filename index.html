@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CryptoWorld Map 2.0</title>
+    
+    <!-- Bibliotecas -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://unpkg.com/globe.gl"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
+    
+    <style>
+        /* Estilos anteriores + novos */
+        .filter-container {
+            position: absolute;
+            top: 80px;
+            left: 20px;
+            z-index: 1000;
+            background: rgba(0,0,0,0.7);
+            padding: 15px;
+            border-radius: 20px;
+        }
+
+        .filter-btn {
+            background: #00f3ff;
+            color: #000;
+            border: none;
+            padding: 8px 15px;
+            margin: 5px;
+            border-radius: 15px;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        .filter-btn.active {
+            background: #ff0066;
+        }
+
+        .route-modal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.9);
+            padding: 20px;
+            border-radius: 15px;
+            width: 80%;
+            height: 70vh;
+            display: none;
+            z-index: 2000;
+        }
+
+        #routeMap {
+            width: 100%;
+            height: 100%;
+        }
+
+        .rating-stars {
+            color: #ffd700;
+            margin-top: 10px;
+        }
+
+        .user-menu {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="search-box">
+        <input type="text" id="countrySearch" placeholder="Procure por país...">
+    </div>
+
+    <div class="filter-container">
+        <button class="filter-btn active" data-type="all">Todos</button>
+        <button class="filter-btn" data-type="ATM">ATMs</button>
+        <button class="filter-btn" data-type="Business">Comércios</button>
+    </div>
+
+    <div class="user-menu">
+        <button id="loginBtn">Entrar</button>
+    </div>
+
+    <div id="globeContainer"></div>
+
+    <div class="sidebar">
+        <h2>Locais Encontrados</h2>
+        <div id="locationsList"></div>
+    </div>
+
+    <div class="route-modal">
+        <div id="routeMap"></div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script>
+        // Sistema de Login Simples
+        const user = {
+            loggedIn: false,
+            name: ''
+        };
+
+        document.getElementById('loginBtn').addEventListener('click', () => {
+            user.loggedIn = !user.loggedIn;
+            document.getElementById('loginBtn').textContent = user.loggedIn ? 'Sair' : 'Entrar';
+        });
+
+        // Integração com API Coinmap
+        async function fetchCryptoLocations(country) {
+            const response = await fetch(`https://coinmap.org/api/v1/venues/?country=${country}`);
+            const data = await response.json();
+            return data.venues.map(item => ({
+                type: item.category === 'ATM' ? 'ATM' : 'Business',
+                name: item.name,
+                address: item.address,
+                lat: item.lat,
+                lng: item.lon,
+                crypto: item.tags.split(' ')
+            }));
+        }
+
+        // Inicializar o Globo 3D
+        const globe = Globe()
+            .globeImageUrl('//unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
+            .bumpImageUrl('//unpkg.com/three-globe/example/img/earth-topology.png')
+            .htmlElement(d => createMarker(d));
+
+        // Filtros
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                filterMarkers(btn.dataset.type);
+            });
+        });
+
+        function filterMarkers(type) {
+            globe.htmlElementsData(currentData.filter(d => 
+                type === 'all' || d.type === type
+            ));
+        }
+
+        // Sistema de Rotas
+        let routeMap;
+        function showRoute(start, end) {
+            document.querySelector('.route-modal').style.display = 'block';
+            if (!routeMap) {
+                routeMap = L.map('routeMap').setView([start.lat, start.lng], 13);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(routeMap);
+            }
+            
+            L.Routing.control({
+                waypoints: [
+                    L.latLng(start.lat, start.lng),
+                    L.latLng(end.lat, end.lng)
+                ],
+                routeWhileDragging: true
+            }).addTo(routeMap);
+        }
+
+        // Criar Marcadores Dinâmicos
+        function createMarker(d) {
+            const marker = document.createElement('div');
+            marker.className = `marker ${d.type === 'ATM' ? 'atm-marker' : 'business-marker'}`;
+            marker.innerHTML = `
+                <div class="marker-pulse"></div>
+                <div class="marker-tooltip">${d.name}</div>
+            `;
+            
+            marker.addEventListener('click', () => {
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(position => {
+                        showRoute(
+                            { lat: position.coords.latitude, lng: position.coords.longitude },
+                            { lat: d.lat, lng: d.lng }
+                        );
+                    });
+                }
+            });
+            return marker;
+        }
+
+        // Barra de Pesquisa
+        document.getElementById('countrySearch').addEventListener('input', async function(e) {
+            const country = e.target.value;
+            if (country.length > 2) {
+                const data = await fetchCryptoLocations(country);
+                currentData = data;
+                globe.htmlElementsData(data);
+                updateSidebar(data);
+            }
+        });
+
+        function updateSidebar(data) {
+            const html = data.map(loc => `
+                <div class="location-card">
+                    <h3>${loc.name}</h3>
+                    <p>Tipo: ${loc.type}</p>
+                    <p>Endereço: ${loc.address}</p>
+                    <div class="rating-stars">★★★★☆</div>
+                    <button onclick="showRouteFromCurrent(${loc.lat}, ${loc.lng})">Como chegar</button>
+                </div>
+            `).join('');
+            document.getElementById('locationsList').innerHTML = html;
+        }
+
+        // Inicialização
+        let currentData = [];
+        globe(document.getElementById('globeContainer'));
+        globe.controls().autoRotate = true;
+        globe.pointOfView({ altitude: 2 });
+
+        // Fechar Modal
+        document.querySelector('.route-modal').addEventListener('click', e => {
+            if (e.target === document.querySelector('.route-modal')) {
+                document.querySelector('.route-modal').style.display = 'none';
+                if (routeMap) routeMap.remove();
+                routeMap = null;
+            }
+        });
+    </script>
+</body>
+</html>
