@@ -6,10 +6,8 @@
     <title>CryptoWorld Map 2.0</title>
 
     <!-- Bibliotecas -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://unpkg.com/globe.gl"></script>
-    <script src="https://unpkg.com/supercluster@7.1.0/dist/index.umd.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css">
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
 
     <style>
@@ -21,8 +19,8 @@
             background: #000;
         }
 
-        /* Contêiner do Globo */
-        #globeContainer {
+        /* Contêiner do Mapa */
+        #mapContainer {
             width: 100vw;
             height: 100vh;
             position: relative;
@@ -68,38 +66,17 @@
             background: #ff0066;
         }
 
-        /* Marcadores no Globo */
-        .marker {
-            position: relative;
-            cursor: pointer;
-        }
-        .marker-tooltip {
-            position: absolute;
-            bottom: 100%;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.8);
-            color: #fff;
-            padding: 5px 10px;
-            border-radius: 5px;
-            white-space: nowrap;
-        }
-        .marker-pulse {
-            width: 10px;
-            height: 10px;
-            background: #00f3ff;
+        /* Marcadores no Mapa */
+        .leaflet-marker-icon {
+            width: 20px;
+            height: 20px;
             border-radius: 50%;
-            animation: pulse 1.5s infinite ease-in-out;
         }
-        @keyframes pulse {
-            0% {
-                transform: scale(1);
-                opacity: 1;
-            }
-            100% {
-                transform: scale(1.5);
-                opacity: 0;
-            }
+        .atm-marker {
+            background-color: #ff0066 !important;
+        }
+        .business-marker {
+            background-color: #00f3ff !important;
         }
     </style>
 </head>
@@ -112,31 +89,15 @@
         <button class="filter-btn" data-type="ATM">ATMs</button>
         <button class="filter-btn" data-type="Business">Comércios</button>
     </div>
-    <div id="globeContainer"></div>
+    <div id="mapContainer"></div>
 
     <script>
-        // Função para verificar se o elemento existe
-        function isElementInDOM(id) {
-            return document.getElementById(id) !== null;
-        }
-
-        // Inicialização do Globo
-        let globe;
-        if (isElementInDOM('globeContainer')) {
-            globe = Globe()
-                .globeImageUrl('//unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
-                .bumpImageUrl('//unpkg.com/three-globe/example/img/earth-topology.png')
-                .pointsData([])
-                .pointAltitude(d => 0.05)
-                .pointColor(() => '#00f3ff')
-                .pointRadius(() => 0.01);
-
-            globe(document.getElementById('globeContainer'));
-            globe.controls().autoRotate = true;
-            globe.pointOfView({ altitude: 2 });
-        } else {
-            console.error("O elemento 'globeContainer' não foi encontrado no DOM.");
-        }
+        // Inicialização do Mapa
+        const map = L.map('mapContainer').setView([0, 0], 2); // Vista inicial (latitude, longitude, zoom)
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; OpenStreetMap'
+        }).addTo(map);
 
         // Função para buscar locais via API Coinmap
         async function fetchCryptoLocations(country) {
@@ -156,24 +117,38 @@
                 }));
             } catch (error) {
                 console.error(error.message);
+                alert(error.message);
                 return [];
             }
         }
 
-        // Função para atualizar os marcadores no globo usando clusters
-        const superCluster = Supercluster({
-            radius: 60,
-            maxZoom: 16
-        });
+        // Função para adicionar marcadores ao mapa
+        function addMarkersToMap(data) {
+            currentMarkers.forEach(marker => map.removeLayer(marker)); // Limpa marcadores antigos
+            currentMarkers = [];
 
-        function updateGlobeMarkers(data) {
-            superCluster.load(data.map(loc => ({
-                geometry: { coordinates: [loc.lng, loc.lat] },
-                properties: { ...loc }
-            })));
+            data.forEach(loc => {
+                const marker = L.circleMarker([loc.lat, loc.lng], {
+                    radius: 5,
+                    fillColor: loc.type === 'ATM' ? '#ff0066' : '#00f3ff',
+                    color: '#000',
+                    weight: 1,
+                    opacity: 1,
+                    fillOpacity: 0.8
+                }).addTo(map);
 
-            globe.pointsData(superCluster.getClusters([-180, -90, 180, 90], globe.zoomLevel()));
+                marker.bindPopup(`
+                    <strong>${loc.name}</strong><br>
+                    Tipo: ${loc.type}<br>
+                    Endereço: ${loc.address}
+                `);
+
+                currentMarkers.push(marker);
+            });
         }
+
+        // Variável para armazenar os marcadores atuais
+        let currentMarkers = [];
 
         // Função para filtrar marcadores
         document.querySelectorAll('.filter-btn').forEach(btn => {
@@ -185,7 +160,8 @@
         });
 
         function filterMarkers(type) {
-            globe.pointsData(currentData.filter(d => type === 'all' || d.properties.type === type));
+            const filteredData = currentData.filter(d => type === 'all' || d.type === type);
+            addMarkersToMap(filteredData);
         }
 
         // Barra de Pesquisa
@@ -196,12 +172,12 @@
                 try {
                     const data = await fetchCryptoLocations(country);
                     currentData = data;
-                    updateGlobeMarkers(data); // Atualiza os marcadores no globo
+                    addMarkersToMap(data); // Adiciona marcadores ao mapa
                 } catch (error) {
-                    alert(error.message);
+                    console.error(error.message);
                 }
             } else {
-                globe.pointsData([]); // Limpa os marcadores se a entrada estiver vazia
+                addMarkersToMap([]); // Limpa os marcadores se a entrada estiver vazia
             }
         });
 
@@ -212,7 +188,7 @@
                 const data = await fetchCryptoLocations(country);
                 currentData = [...currentData, ...data];
             }
-            updateGlobeMarkers(currentData);
+            addMarkersToMap(currentData);
         }
 
         // Inicializar com países populares
