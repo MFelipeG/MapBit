@@ -27,7 +27,7 @@
             position: relative;
         }
 
-        /* Outros estilos... */
+        /* Barra de Pesquisa */
         .search-box {
             position: absolute;
             top: 20px;
@@ -85,48 +85,100 @@
             return document.getElementById(id) !== null;
         }
 
-        // Função para inicializar o globo
-        function initializeGlobe() {
-            if (!isElementInDOM('globeContainer')) {
-                console.error("O elemento 'globeContainer' não foi encontrado no DOM.");
-                return;
-            }
+        // Inicialização do Globo
+        let globe;
+        if (isElementInDOM('globeContainer')) {
+            globe = Globe()
+                .globeImageUrl('//unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
+                .bumpImageUrl('//unpkg.com/three-globe/example/img/earth-topology.png')
+                .pointsData([])
+                .pointAltitude(d => 0.05)
+                .pointColor(() => '#00f3ff')
+                .pointRadius(() => 0.01);
 
+            globe(document.getElementById('globeContainer'));
+            globe.controls().autoRotate = true;
+            globe.pointOfView({ altitude: 2 });
+        } else {
+            console.error("O elemento 'globeContainer' não foi encontrado no DOM.");
+        }
+
+        // Função para buscar locais via API Coinmap
+        async function fetchCryptoLocations(country) {
             try {
-                const globe = Globe()
-                    .globeImageUrl('//unpkg.com/three-globe/example/img/earth-blue-marble.jpg') // Imagem principal
-                    .bumpImageUrl('//unpkg.com/three-globe/example/img/earth-topology.png') // Textura de relevo
-                    .pointsData([]) // Dados iniciais vazios
-                    .pointAltitude(d => 0.05) // Altitude dos pontos
-                    .pointColor(() => '#00f3ff') // Cor dos pontos
-                    .pointRadius(() => 0.01); // Tamanho dos pontos
-
-                globe(document.getElementById('globeContainer'));
-                globe.controls().autoRotate = true; // Rotação automática
-                globe.pointOfView({ altitude: 2 }); // Vista inicial
-
-                console.log("Globo inicializado com sucesso!");
+                const response = await fetch(`https://coinmap.org/api/v1/venues/?country=${country}`);
+                if (!response.ok) {
+                    throw new Error("Nenhum local encontrado para este país.");
+                }
+                const data = await response.json();
+                return data.venues.map(item => ({
+                    type: item.category === 'ATM' ? 'ATM' : 'Business',
+                    name: item.name,
+                    address: item.address,
+                    lat: item.lat,
+                    lng: item.lon,
+                    crypto: item.tags.split(' ')
+                }));
             } catch (error) {
-                console.error("Erro ao inicializar o globo:", error);
-
-                // Fallback: Exibir mensagem de erro na tela
-                const errorDiv = document.createElement('div');
-                errorDiv.style.position = 'absolute';
-                errorDiv.style.top = '50%';
-                errorDiv.style.left = '50%';
-                errorDiv.style.transform = 'translate(-50%, -50%)';
-                errorDiv.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
-                errorDiv.style.padding = '20px';
-                errorDiv.style.borderRadius = '10px';
-                errorDiv.style.color = '#fff';
-                errorDiv.textContent = 'Erro ao carregar o globo. Verifique o console para mais detalhes.';
-                document.body.appendChild(errorDiv);
+                console.error(error.message);
+                return [];
             }
         }
 
-        // Garantir que o DOM esteja carregado antes de inicializar o globo
+        // Função para atualizar os marcadores no globo
+        function updateGlobeMarkers(data) {
+            globe.pointsData(data.map(loc => ({
+                latitude: loc.lat,
+                longitude: loc.lng,
+                altitude: 0.05,
+                color: loc.type === 'ATM' ? '#ff0066' : '#00f3ff',
+                radius: 0.01
+            })));
+        }
+
+        // Função para filtrar marcadores
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                filterMarkers(btn.dataset.type);
+            });
+        });
+
+        function filterMarkers(type) {
+            globe.pointsData(currentData.filter(d => type === 'all' || d.type === type));
+        }
+
+        // Barra de Pesquisa
+        let currentData = [];
+        document.getElementById('countrySearch').addEventListener('input', async function(e) {
+            const country = e.target.value.trim();
+            if (country.length > 2) {
+                try {
+                    const data = await fetchCryptoLocations(country);
+                    currentData = data;
+                    updateGlobeMarkers(data); // Atualiza os marcadores no globo
+                } catch (error) {
+                    console.error(error.message);
+                }
+            } else {
+                globe.pointsData([]); // Limpa os marcadores se a entrada estiver vazia
+            }
+        });
+
+        // Carregar países populares automaticamente
+        const popularCountries = ['USA', 'BRA', 'CAN', 'FRA', 'DEU', 'ITA', 'JPN', 'CHN', 'IND', 'RUS'];
+        async function loadPopularCountries() {
+            for (const country of popularCountries) {
+                const data = await fetchCryptoLocations(country);
+                currentData = [...currentData, ...data];
+            }
+            updateGlobeMarkers(currentData);
+        }
+
+        // Inicializar com países populares
         document.addEventListener('DOMContentLoaded', () => {
-            initializeGlobe();
+            loadPopularCountries();
         });
     </script>
 </body>
