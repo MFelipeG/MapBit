@@ -8,7 +8,6 @@
     <!-- Bibliotecas -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://unpkg.com/globe.gl"></script>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
 
     <style>
@@ -27,7 +26,7 @@
             position: relative;
         }
 
-        /* Outros estilos... */
+        /* Caixa de Pesquisa */
         .search-box {
             position: absolute;
             top: 20px;
@@ -80,51 +79,69 @@
     <div id="globeContainer"></div>
 
     <script>
-        // Função para verificar se o elemento existe
-        function isElementInDOM(id) {
-            return document.getElementById(id) !== null;
-        }
+        let globe;
+        let allPoints = [
+            { lat: 40.7128, lng: -74.0060, type: "ATM", name: "ATM Bitcoin NY" }, // Nova York
+            { lat: 51.5074, lng: -0.1278, type: "ATM", name: "ATM Bitcoin Londres" }, // Londres
+            { lat: -23.5505, lng: -46.6333, type: "Business", name: "Loja Cripto São Paulo" }, // São Paulo
+            { lat: 35.6895, lng: 139.6917, type: "Business", name: "Loja Cripto Tóquio" }  // Tóquio
+        ];
 
-        // Função para inicializar o globo
         function initializeGlobe() {
-            if (!isElementInDOM('globeContainer')) {
-                console.error("O elemento 'globeContainer' não foi encontrado no DOM.");
+            const container = document.getElementById('globeContainer');
+
+            if (!container) {
+                console.error("Elemento 'globeContainer' não encontrado.");
                 return;
             }
 
             try {
-                const globe = Globe()
-                    .globeImageUrl('//unpkg.com/three-globe/example/img/earth-blue-marble.jpg') // Imagem principal
-                    .bumpImageUrl('//unpkg.com/three-globe/example/img/earth-topology.png') // Textura de relevo
-                    .pointsData([]) // Dados iniciais vazios
-                    .pointAltitude(d => 0.05) // Altitude dos pontos
-                    .pointColor(() => '#00f3ff') // Cor dos pontos
-                    .pointRadius(() => 0.01); // Tamanho dos pontos
+                globe = Globe()
+                    .globeImageUrl('https://raw.githubusercontent.com/chrisrzhou/three-globe/master/example/img/earth-blue-marble.jpg')
+                    .bumpImageUrl('https://raw.githubusercontent.com/chrisrzhou/three-globe/master/example/img/earth-topology.png')
+                    .pointAltitude(() => 0.05)
+                    .pointRadius(() => 0.02)
+                    .pointColor(d => d.type === "ATM" ? "#ff0066" : "#00f3ff") // ATMs vermelhos, Comércios azuis
+                    .onPointClick(d => alert(`Local: ${d.name}\nTipo: ${d.type}`));
 
-                globe(document.getElementById('globeContainer'));
-                globe.controls().autoRotate = true; // Rotação automática
-                globe.pointOfView({ altitude: 2 }); // Vista inicial
+                globe(container);
+                globe.controls().autoRotate = true;
+                globe.pointOfView({ altitude: 2 });
+
+                // Exibir todos os pontos no início
+                updatePoints("all");
 
                 console.log("Globo inicializado com sucesso!");
             } catch (error) {
                 console.error("Erro ao inicializar o globo:", error);
-
-                // Fallback: Exibir mensagem de erro na tela
-                const errorDiv = document.createElement('div');
-                errorDiv.style.position = 'absolute';
-                errorDiv.style.top = '50%';
-                errorDiv.style.left = '50%';
-                errorDiv.style.transform = 'translate(-50%, -50%)';
-                errorDiv.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
-                errorDiv.style.padding = '20px';
-                errorDiv.style.borderRadius = '10px';
-                errorDiv.style.color = '#fff';
-                errorDiv.textContent = 'Erro ao carregar o globo. Verifique o console para mais detalhes.';
-                document.body.appendChild(errorDiv);
             }
         }
 
-        // Garantir que o DOM esteja carregado antes de inicializar o globo
+        // Atualizar os pontos conforme o filtro selecionado
+        function updatePoints(filterType) {
+            let filteredData = filterType === "all" ? allPoints : allPoints.filter(d => d.type === filterType);
+            globe.pointsData(filteredData);
+        }
+
+        // Configurar eventos dos botões de filtro
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', function () {
+                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+
+                updatePoints(this.getAttribute('data-type'));
+            });
+        });
+
+        // Pesquisar por país
+        document.getElementById('countrySearch').addEventListener('input', function () {
+            const searchTerm = this.value.toLowerCase();
+
+            let filteredData = allPoints.filter(d => d.name.toLowerCase().includes(searchTerm));
+            globe.pointsData(filteredData);
+        });
+
+        // Iniciar o globo quando a página carregar
         document.addEventListener('DOMContentLoaded', () => {
             initializeGlobe();
         });
